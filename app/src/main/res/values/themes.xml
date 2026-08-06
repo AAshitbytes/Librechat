@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The screens are drawn by Compose, so the Android theme only needs to remove the
+         old title bar and set the window background. -->
+    <style name="Theme.LibreChat" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
