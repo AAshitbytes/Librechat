@@ -10,10 +10,12 @@ import android.util.Log
  * [onLine]. That method asks [MeshRouter] what should happen, then does it: showing the message,
  * passing it on to the other phones, or both.
  */
-class MeshManager(context: Context, val myName: String) {
-
-    /** A short random name for this phone, used to address private messages. */
-    val myId: String = Packet.randomHex(4)
+class MeshManager(
+    context: Context,
+    val myName: String,
+    /** The short id of this phone, used to address private messages. Comes from [Settings]. */
+    val myId: String,
+) {
 
     val store = ChatStore()
 

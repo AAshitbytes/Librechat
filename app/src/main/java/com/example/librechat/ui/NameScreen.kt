@@ -19,10 +19,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** The first screen. The name typed here is what other phones show in their device list. */
+/**
+ * The first screen. The name typed here is what other phones show in their device list.
+ *
+ * It is only shown on the very first run, because the name is saved afterwards.
+ */
 @Composable
-fun NameScreen(onStart: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
+fun NameScreen(startingName: String = "", onStart: (String) -> Unit) {
+    var name by remember { mutableStateOf(startingName) }
 
     Column(
         modifier = Modifier
