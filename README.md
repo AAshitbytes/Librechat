@@ -39,11 +39,11 @@ fits into one write instead of being split up.
 
 Everything sent over a link is a small JSON object. There are only two kinds.
 
-A `hello`, sent once when a link comes up, so the two phones learn each other's name. It is never
-passed on:
+A `hello`, which is an announcement meaning "this phone is here". Every phone sends one when a new
+link comes up and then every 10 seconds, and it travels across the mesh just like a message:
 
 ```json
-{"type":"hello","from":"7f3a","name":"Prem"}
+{"type":"hello","id":"5b7e0f12","from":"7f3a","name":"Prem","to":"","text":"","ttl":5}
 ```
 
 A `msg`, which is a chat message and does travel across the mesh:
@@ -80,14 +80,20 @@ and C cannot hear each other.
 `MeshRouter` deliberately contains no Android code, which is why the mesh rules can be unit tested
 on a normal computer.
 
-### Finding devices
+### Finding devices, and noticing they have gone
 
-The device list separates two cases:
+Phones are discovered from the `hello` announcements, which arrive whether or not anybody is
+chatting. The device list separates two cases, and the `ttl` is what tells them apart:
 
-- **Nearby** — there is a direct Bluetooth link to that phone. Learned from its `hello`.
-- **In mesh** — no direct link, but one of its messages reached us through other phones.
+- **Nearby** — the announcement arrived with its `ttl` untouched at 5, so nobody passed it on and
+  it came straight from that phone.
+- **In mesh** — the `ttl` had already been lowered, so the announcement was relayed and that phone
+  is further away.
 
-This means a distant phone appears in the list once it has said something in the public chat.
+Noticing a phone has *left* is the harder half. Nothing says goodbye, and for a phone two hops away
+there is not even a Bluetooth link to lose. So each phone records when it last heard from every
+other phone, and anything silent for 30 seconds is dropped from the list. Since announcements
+arrive every 10 seconds, a phone that is still there is never dropped by mistake.
 
 ## Project layout
 
@@ -98,6 +104,7 @@ app/src/main/java/com/example/librechat/
     MeshRouter.kt        the relay rules: duplicates, hop limit, addressing
     Packet.kt            the JSON format sent over a link
     ChatStore.kt         messages and known devices, held in memory
+    Settings.kt          the name and phone id, kept between runs
     Ble.kt               the Bluetooth ids the app uses
     BleServer.kt         advertising and GATT server (peripheral half)
     BleClient.kt         scanning and GATT client (central half)
@@ -109,6 +116,7 @@ app/src/main/java/com/example/librechat/
 app/src/test/java/com/example/librechat/
     PacketTest.kt        the JSON format
     MeshRouterTest.kt    the relay rules
+    ChatStoreTest.kt     the device list and where messages are filed
 ```
 
 ## Built with
@@ -152,7 +160,9 @@ At least two physical phones are needed.
 4. To see relaying, move phone A and phone C far apart, or put a wall between them, keeping phone B
    in the middle. A and C now list each other as **In mesh** rather than Nearby, and messages still
    get through, because B is passing them on.
-5. `adb logcat -s LibreChat` shows links coming up and going down while this happens.
+5. Close the app on one phone. Within about 30 seconds it disappears from the other two device
+   lists, because its announcements have stopped arriving.
+6. `adb logcat -s LibreChat` shows links coming up and going down while this happens.
 
 ## What this version does not do
 
@@ -161,7 +171,9 @@ These were left out to keep the code short and readable:
 - **No encryption.** A private message is only addressed to one phone; the phones relaying it could
   read it if they were modified to do so.
 - **Foreground only.** The mesh stops when the app is closed, as there is no background service.
-- **No history.** Messages are kept in memory, so they are gone when the app restarts.
+- **No history.** Messages are kept in memory, so they are gone when the app restarts. Only the
+  chosen name and this phone's id are saved.
+- **The name cannot be changed** once it has been chosen, short of clearing the app's data.
 - **Flooding does not scale.** Every message reaches every phone, which is fine for a room but
   would be wasteful for a very large network.
 - **No delivery guarantee.** A message sent while a phone is out of range is simply missed; there

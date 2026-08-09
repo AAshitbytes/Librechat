@@ -2,6 +2,19 @@ package com.example.librechat
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/** How often this phone tells the mesh it is still here. */
+private const val ANNOUNCE_EVERY_MS = 10_000L
+
+/** A phone we have not heard from for this long is taken off the device list. */
+private const val GONE_AFTER_MS = 30_000L
 
 /**
  * Puts the whole mesh together.
@@ -27,12 +40,24 @@ class MeshManager(
     // is which in order to update the device list when a phone goes out of range.
     private val idByAddress = mutableMapOf<String, String>()
 
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     fun start() {
         server.start()
         client.start()
+
+        // Say hello over and over, and drop the phones that have stopped saying it back.
+        scope.launch {
+            while (isActive) {
+                announce()
+                store.removeGone(before = System.currentTimeMillis() - GONE_AFTER_MS)
+                delay(ANNOUNCE_EVERY_MS)
+            }
+        }
     }
 
     fun stop() {
+        scope.cancel()
         server.stop()
         client.stop()
     }
@@ -46,33 +71,39 @@ class MeshManager(
         sendToEveryone(packet, except = null)
     }
 
+    /** Tells everybody in the mesh that this phone is still here. */
+    private fun announce() {
+        val hello = Packet.hello(from = myId, name = myName)
+        router.remember(hello.id)
+        sendToEveryone(hello, except = null)
+    }
+
     /** A packet arrived over one of the Bluetooth links. */
     private fun onLine(address: String, text: String) {
         val packet = Packet.fromJson(text) ?: return
-
-        if (packet.type == TYPE_HELLO) {
-            idByAddress[address] = packet.from
-            store.addPeer(packet.from, packet.name, nearby = true)
-            return
-        }
-
         if (packet.from == myId) return
 
         when (val action = router.handle(packet)) {
             is Action.Drop -> Unit
-            is Action.Deliver -> deliver(packet)
+            is Action.Deliver -> deliver(packet, address)
             is Action.Relay -> sendToEveryone(action.packet, except = address)
             is Action.DeliverAndRelay -> {
-                deliver(packet)
+                deliver(packet, address)
                 sendToEveryone(action.packet, except = address)
             }
         }
     }
 
-    private fun deliver(packet: Packet) {
-        // Hearing from a phone is enough to list it, even if it is several hops away.
-        store.addPeer(packet.from, packet.name, nearby = false)
-        store.addIncoming(packet)
+    private fun deliver(packet: Packet, address: String) {
+        // A packet that still has its full ttl has not been passed on by anybody yet, so it came
+        // straight from the phone that wrote it and that phone is a direct neighbour.
+        val nearby = packet.ttl == START_TTL
+        if (nearby) idByAddress[address] = packet.from
+
+        // Hearing anything from a phone is what keeps it in the device list.
+        store.addPeer(packet.from, packet.name, nearby)
+
+        if (packet.type == TYPE_MSG) store.addIncoming(packet)
     }
 
     /** This is the flooding step: give the packet to every phone except the one it came from. */
@@ -86,12 +117,9 @@ class MeshManager(
         }
     }
 
-    /** A new link is ready, so introduce ourselves over it. */
+    /** A new link is ready, so introduce ourselves straight away instead of waiting for the timer. */
     private fun onLinkUp(address: String) {
-        val hello = Packet.hello(from = myId, name = myName).toJson()
-        // The address belongs to one of the two halves; the other one ignores it.
-        server.send(address, hello)
-        client.send(address, hello)
+        announce()
         Log.d(TAG, "link up with $address")
     }
 

@@ -4,7 +4,10 @@ import org.json.JSONException
 import org.json.JSONObject
 import kotlin.random.Random
 
-/** Sent once over a new link so the two phones learn each other's name. Never relayed. */
+/**
+ * An announcement carrying a phone's name. Every phone sends one regularly, and they travel
+ * across the mesh, so each phone knows who is still around.
+ */
 const val TYPE_HELLO = "hello"
 
 /** A chat message. These are the packets that travel across the mesh. */
@@ -64,10 +67,16 @@ data class Packet(
             }
         }
 
+        /**
+         * An announcement saying "this phone is here". It travels across the mesh like a message,
+         * so it needs its own id, otherwise other phones would treat the second one as a repeat
+         * of the first and throw it away.
+         */
         fun hello(from: String, name: String) = Packet(
             type = TYPE_HELLO,
             from = from,
             name = name,
+            id = newId(),
         )
 
         fun message(from: String, name: String, to: String, text: String) = Packet(

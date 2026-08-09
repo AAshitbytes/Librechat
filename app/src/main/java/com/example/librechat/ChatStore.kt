@@ -14,13 +14,17 @@ data class ChatMessage(
 /**
  * Another phone we know about.
  *
- * [nearby] is true when we have a direct Bluetooth link to it. A peer that is not nearby was
- * discovered because one of its messages reached us through another phone.
+ * [nearby] is true when its packets reach us directly. A peer that is not nearby is further away
+ * and its packets are being passed on by other phones.
+ *
+ * [lastSeen] is when we last heard anything from it, which is how phones that have left are
+ * removed from the list.
  */
 data class Peer(
     val id: String,
     val name: String,
     val nearby: Boolean,
+    val lastSeen: Long,
 )
 
 /**
@@ -45,13 +49,15 @@ class ChatStore {
         return conversations.getOrPut(chatId) { MutableStateFlow(emptyList()) }
     }
 
+    /** Called every time we hear from a phone, which both adds it and keeps it in the list. */
     @Synchronized
-    fun addPeer(id: String, name: String, nearby: Boolean) {
-        val known = peerList.value.find { it.id == id }
-        // A phone we can already reach directly stays marked as nearby even if we later hear it
-        // through somebody else as well.
-        val stillNearby = nearby || (known?.nearby == true)
-        val updated = peerList.value.filter { it.id != id } + Peer(id, name, stillNearby)
+    fun addPeer(
+        id: String,
+        name: String,
+        nearby: Boolean,
+        at: Long = System.currentTimeMillis(),
+    ) {
+        val updated = peerList.value.filter { it.id != id } + Peer(id, name, nearby, at)
         peerList.value = updated.sortedWith(compareByDescending<Peer> { it.nearby }.thenBy { it.name })
     }
 
@@ -59,6 +65,18 @@ class ChatStore {
     @Synchronized
     fun clearNearby(id: String) {
         peerList.value = peerList.value.map { if (it.id == id) it.copy(nearby = false) else it }
+    }
+
+    /**
+     * Forgets every phone we have not heard from since [before].
+     *
+     * This is how a phone that walked away or closed the app disappears from the list. There is no
+     * message saying goodbye, and for a phone several hops away there is not even a Bluetooth link
+     * to lose, so the only sign that it has gone is that its announcements stop arriving.
+     */
+    @Synchronized
+    fun removeGone(before: Long) {
+        peerList.value = peerList.value.filter { it.lastSeen >= before }
     }
 
     fun addIncoming(packet: Packet) {
