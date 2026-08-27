@@ -125,6 +125,7 @@ class MainActivity : ComponentActivity() {
                     myId = active.myId,
                     peers = peers,
                     onOpenChat = { chatId, title -> screen = Screen.Chat(chatId, title) },
+                    onRefresh = { active.refresh() },
                 )
             }
 
