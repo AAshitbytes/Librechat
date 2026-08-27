@@ -120,18 +120,30 @@ class MainActivity : ComponentActivity() {
 
             Screen.Devices -> manager?.let { active ->
                 val peers by active.store.peers.collectAsState()
+                val unreadChatIds by active.store.unreadChatIds.collectAsState()
                 DeviceScreen(
                     myName = active.myName,
                     myId = active.myId,
                     peers = peers,
-                    onOpenChat = { chatId, title -> screen = Screen.Chat(chatId, title) },
+                    unreadChatIds = unreadChatIds,
+                    onOpenChat = { chatId, title ->
+                        active.store.markRead(chatId)
+                        screen = Screen.Chat(chatId, title)
+                    },
                     onRefresh = { active.refresh() },
                 )
             }
 
             is Screen.Chat -> manager?.let { active ->
                 BackHandler { screen = Screen.Devices }
+                LaunchedEffect(current.chatId) {
+                    active.store.markRead(current.chatId)
+                }
                 val messages by active.store.messages(current.chatId).collectAsState()
+                // Mark as read when new messages arrive while the chat is open.
+                LaunchedEffect(messages.size) {
+                    active.store.markRead(current.chatId)
+                }
                 ChatScreen(
                     title = current.title,
                     messages = messages,

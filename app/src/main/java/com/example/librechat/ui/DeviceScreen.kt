@@ -1,7 +1,9 @@
 package com.example.librechat.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -9,8 +11,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -28,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.librechat.PUBLIC
 import com.example.librechat.Peer
@@ -43,6 +49,7 @@ fun DeviceScreen(
     myName: String,
     myId: String,
     peers: List<Peer>,
+    unreadChatIds: Set<String>,
     onOpenChat: (chatId: String, title: String) -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -86,12 +93,21 @@ fun DeviceScreen(
                 .fillMaxWidth()
                 .clickable { onOpenChat(PUBLIC, "Public chat") },
         ) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Public chat", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "Everybody in the mesh can read this",
-                    style = MaterialTheme.typography.bodySmall,
-                )
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column {
+                    Text("Public chat", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Everybody in the mesh can read this",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                if (unreadChatIds.contains(PUBLIC)) Dot()
             }
         }
 
@@ -121,7 +137,11 @@ fun DeviceScreen(
 
         LazyColumn {
             items(filteredPeers) { peer ->
-                PeerRow(peer, onClick = { onOpenChat(peer.id, peer.name) })
+                PeerRow(
+                    peer = peer,
+                    hasUnread = unreadChatIds.contains(peer.id),
+                    onClick = { onOpenChat(peer.id, peer.name) }
+                )
                 HorizontalDivider()
             }
         }
@@ -129,7 +149,7 @@ fun DeviceScreen(
 }
 
 @Composable
-private fun PeerRow(peer: Peer, onClick: () -> Unit) {
+private fun PeerRow(peer: Peer, hasUnread: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -138,13 +158,28 @@ private fun PeerRow(peer: Peer, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
-            Text(peer.name, style = MaterialTheme.typography.bodyLarge)
-            Text("#${peer.id}", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (hasUnread) {
+                Dot()
+                Spacer(Modifier.width(8.dp))
+            }
+            Column {
+                Text(peer.name, style = MaterialTheme.typography.bodyLarge)
+                Text("#${peer.id}", style = MaterialTheme.typography.bodySmall)
+            }
         }
         Text(
             if (peer.nearby) "Nearby" else "In mesh",
             style = MaterialTheme.typography.labelMedium,
         )
     }
+}
+
+@Composable
+private fun Dot() {
+    Box(
+        modifier = Modifier
+            .size(8.dp)
+            .background(Color.Red, CircleShape)
+    )
 }
