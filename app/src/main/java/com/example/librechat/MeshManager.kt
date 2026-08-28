@@ -62,6 +62,21 @@ class MeshManager(
         client.stop()
     }
 
+    /**
+     * Tries to find nearby phones again.
+     *
+     * This is useful if Bluetooth was turned off and on again, as it cleans up the list and
+     * asks the mesh for fresh announcements.
+     */
+    fun refresh() {
+        server.stop()
+        client.stop()
+        server.start()
+        client.start()
+        store.removeGone(before = System.currentTimeMillis())
+        announce()
+    }
+
     /** Sends a message the user typed. Pass PUBLIC as [to] for the public chat. */
     fun send(to: String, text: String) {
         val packet = Packet.message(from = myId, name = myName, to = to, text = text)

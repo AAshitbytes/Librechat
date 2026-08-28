@@ -39,6 +39,9 @@ class ChatStore {
     private val peerList = MutableStateFlow<List<Peer>>(emptyList())
     val peers: StateFlow<List<Peer>> = peerList
 
+    private val unreadIds = MutableStateFlow<Set<String>>(emptySet())
+    val unreadChatIds: StateFlow<Set<String>> = unreadIds
+
     // One conversation per chat: PUBLIC for the public chat, otherwise the other phone's id.
     private val conversations = mutableMapOf<String, MutableStateFlow<List<ChatMessage>>>()
 
@@ -82,10 +85,18 @@ class ChatStore {
     fun addIncoming(packet: Packet) {
         val chatId = if (packet.to == PUBLIC) PUBLIC else packet.from
         add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = false))
+        synchronized(unreadIds) {
+            unreadIds.value = unreadIds.value + chatId
+        }
     }
 
     fun addOutgoing(chatId: String, packet: Packet) {
         add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = true))
+    }
+
+    @Synchronized
+    fun markRead(chatId: String) {
+        unreadIds.value = unreadIds.value - chatId
     }
 
     @Synchronized
