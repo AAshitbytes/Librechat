@@ -33,15 +33,17 @@ class ChatStore(private val context: Context? = null) {
 
     private val conversations = mutableMapOf<String, MutableStateFlow<List<ChatMessage>>>()
 
-    fun messagesFor(chatId: String): StateFlow<List<ChatMessage>> {
+    fun messages(chatId: String): StateFlow<List<ChatMessage>> {
         return conversations.getOrPut(chatId) {
             MutableStateFlow(loadFromDisk(chatId))
         }
     }
 
     fun addMessage(chatId: String, message: ChatMessage) {
+        val decryptedText = Security.decrypt(message.text)
+        val finalMessage = message.copy(text = decryptedText)
         val flow = conversations.getOrPut(chatId) { MutableStateFlow(emptyList()) }
-        val updated = flow.value + message
+        val updated = flow.value + finalMessage
         flow.value = updated
         saveToDisk(chatId, updated)
     }
