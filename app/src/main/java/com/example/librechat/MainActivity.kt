@@ -125,6 +125,14 @@ class MainActivity : ComponentActivity() {
                         screen = Screen.Chat(chatId, title)
                     },
                     onRefresh = { active.refresh() },
+                    onChangeName = {
+                        active.stop()
+                        settings.name = ""
+                        manager = null
+                        mesh = null
+                        name = ""
+                        screen = Screen.Name
+                    }
                 )
             }
 
@@ -140,7 +148,7 @@ class MainActivity : ComponentActivity() {
                 ChatScreen(
                     title = current.title,
                     messages = messages,
-                    onSend = { text -> active.send(current.chatId, Security.encrypt(text)) },
+                    onSend = { text -> active.send(current.chatId, text) },
                     onBack = { screen = Screen.Devices },
                 )
             }
