@@ -1,29 +1,41 @@
 package com.example.librechat
 
-import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONArray
-import org.json.JSONObject
 
+/** One line in a chat. [mine] is true for messages this phone sent, so they can be shown differently. */
 data class ChatMessage(
     val fromId: String,
     val fromName: String,
     val text: String,
     val mine: Boolean,
-    val isEmergency: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
 )
 
+/**
+ * Another phone we know about.
+ *
+ * [nearby] is true when its packets reach us directly. A peer that is not nearby is further away
+ * and its packets are being passed on by other phones.
+ *
+ * [lastSeen] is when we last heard anything from it, which is how phones that have left are
+ * removed from the list.
+ */
 data class Peer(
     val id: String,
     val name: String,
     val nearby: Boolean,
     val lastSeen: Long,
-    val rssi: Int = -65
 )
 
-class ChatStore(private val context: Context? = null) {
+/**
+ * Holds everything the screens display. Nothing is written to disk, so chats start empty every
+ * time the app is opened.
+ *
+ * The values are StateFlows because Compose can watch them and redraw a screen by itself whenever
+ * a message or a device arrives.
+ */
+class ChatStore {
 
     private val peerList = MutableStateFlow<List<Peer>>(emptyList())
     val peers: StateFlow<List<Peer>> = peerList
@@ -31,75 +43,68 @@ class ChatStore(private val context: Context? = null) {
     private val unreadIds = MutableStateFlow<Set<String>>(emptySet())
     val unreadChatIds: StateFlow<Set<String>> = unreadIds
 
+    // One conversation per chat: PUBLIC for the public chat, otherwise the other phone's id.
     private val conversations = mutableMapOf<String, MutableStateFlow<List<ChatMessage>>>()
 
-    fun messages(chatId: String): StateFlow<List<ChatMessage>> {
-        return conversations.getOrPut(chatId) {
-            MutableStateFlow(loadFromDisk(chatId))
+    fun messages(chatId: String): StateFlow<List<ChatMessage>> = conversation(chatId)
+
+    @Synchronized
+    private fun conversation(chatId: String): MutableStateFlow<List<ChatMessage>> {
+        return conversations.getOrPut(chatId) { MutableStateFlow(emptyList()) }
+    }
+
+    /** Called every time we hear from a phone, which both adds it and keeps it in the list. */
+    @Synchronized
+    fun addPeer(
+        id: String,
+        name: String,
+        nearby: Boolean,
+        at: Long = System.currentTimeMillis(),
+    ) {
+        val updated = peerList.value.filter { it.id != id } + Peer(id, name, nearby, at)
+        peerList.value = updated.sortedWith(compareByDescending<Peer> { it.nearby }.thenBy { it.name })
+    }
+
+    /** The direct link to this phone is gone, but we may still reach it through the mesh. */
+    @Synchronized
+    fun clearNearby(id: String) {
+        peerList.value = peerList.value.map { if (it.id == id) it.copy(nearby = false) else it }
+    }
+
+    /**
+     * Forgets every phone we have not heard from since [before].
+     *
+     * This is how a phone that walked away or closed the app disappears from the list. There is no
+     * message saying goodbye, and for a phone several hops away there is not even a Bluetooth link
+     * to lose, so the only sign that it has gone is that its announcements stop arriving.
+     */
+    @Synchronized
+    fun removeGone(before: Long) {
+        peerList.value = peerList.value.filter { it.lastSeen >= before }
+    }
+
+    fun addIncoming(packet: Packet) {
+        val chatId = if (packet.to == PUBLIC) PUBLIC else packet.from
+        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = false))
+        synchronized(unreadIds) {
+            unreadIds.value = unreadIds.value + chatId
         }
     }
 
-    fun addMessage(chatId: String, message: ChatMessage) {
-        val decryptedText = Security.decrypt(message.text)
-        val finalMessage = message.copy(text = decryptedText)
-        val flow = conversations.getOrPut(chatId) { MutableStateFlow(emptyList()) }
-        val updated = flow.value + finalMessage
-        flow.value = updated
-        saveToDisk(chatId, updated)
+    fun addOutgoing(chatId: String, packet: Packet) {
+        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = true))
     }
 
-    fun setPeers(list: List<Peer>) {
-        peerList.value = list
-    }
-
+    @Synchronized
     fun markRead(chatId: String) {
         unreadIds.value = unreadIds.value - chatId
     }
 
-    fun markUnread(chatId: String) {
-        unreadIds.value = unreadIds.value + chatId
+    @Synchronized
+    private fun add(chatId: String, message: ChatMessage) {
+        val flow = conversation(chatId)
+        flow.value = flow.value + message
     }
 
-    private fun saveToDisk(chatId: String, list: List<ChatMessage>) {
-        if (context == null) return
-        val prefs = context.getSharedPreferences("librechat_history", Context.MODE_PRIVATE)
-        val array = JSONArray()
-        list.takeLast(100).forEach { msg ->
-            val obj = JSONObject()
-            obj.put("fromId", msg.fromId)
-            obj.put("fromName", msg.fromName)
-            obj.put("text", msg.text)
-            obj.put("mine", msg.mine)
-            obj.put("isEmergency", msg.isEmergency)
-            obj.put("timestamp", msg.timestamp)
-            array.put(obj)
-        }
-        prefs.edit().putString("chat_$chatId", array.toString()).apply()
-    }
-
-    private fun loadFromDisk(chatId: String): List<ChatMessage> {
-        if (context == null) return emptyList()
-        val prefs = context.getSharedPreferences("librechat_history", Context.MODE_PRIVATE)
-        val raw = prefs.getString("chat_$chatId", null) ?: return emptyList()
-        val result = mutableListOf<ChatMessage>()
-        try {
-            val array = JSONArray(raw)
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                result.add(
-                    ChatMessage(
-                        fromId = obj.getString("fromId"),
-                        fromName = obj.getString("fromName"),
-                        text = obj.getString("text"),
-                        mine = obj.getBoolean("mine"),
-                        isEmergency = obj.optBoolean("isEmergency", false),
-                        timestamp = obj.optLong("timestamp", System.currentTimeMillis())
-                    )
-                )
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return result
-    }
+    fun nameOf(id: String): String = peerList.value.find { it.id == id }?.name ?: id
 }
