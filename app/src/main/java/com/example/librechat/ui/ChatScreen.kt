@@ -1,5 +1,6 @@
 package com.example.librechat.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -27,21 +29,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.librechat.ChatMessage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-/** Used for the public chat and for one to one chats. Only the title and the messages differ. */
 @Composable
 fun ChatScreen(
     title: String,
     messages: List<ChatMessage>,
-    onSend: (String) -> Unit,
     onBack: () -> Unit,
+    onSend: (String) -> Unit,
 ) {
-    var draft by remember { mutableStateOf("") }
+    var text by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    val quickOptions = listOf("I'm Safe", "Need Help", "Low Battery", "At Meeting Point")
 
-    // Keep the newest message in view.
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
     }
 
     Column(
@@ -49,9 +55,19 @@ fun ChatScreen(
             .fillMaxSize()
             .padding(16.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("Back") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TextButton(onClick = onBack) {
+                Text("Back")
+            }
+            Spacer(modifier = Modifier.width(8.dp))
             Text(title, style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { onSend("[SOS EMERGENCY] Need immediate assistance!") }) {
+                Text("SOS")
+            }
         }
 
         LazyColumn(
@@ -61,44 +77,60 @@ fun ChatScreen(
                 .fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            items(messages) { message -> MessageRow(message) }
-        }
-
-        Spacer(Modifier.padding(4.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                placeholder = { Text("Message") },
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = {
-                    onSend(draft.trim())
-                    draft = ""
-                },
-                enabled = draft.isNotBlank(),
-            ) {
-                Text("Send")
+            items(messages) { msg ->
+                val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(msg.timestamp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(8.dp)) {
+                        if (!msg.mine) {
+                            Text(msg.fromName, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(msg.text)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            Text(timeStr, style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun MessageRow(message: ChatMessage) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (message.mine) Arrangement.End else Arrangement.Start,
-    ) {
-        Card {
-            Column(Modifier.padding(10.dp)) {
-                if (!message.mine) {
-                    Text(message.fromName, style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+        ) {
+            quickOptions.forEach { option ->
+                TextButton(onClick = { onSend(option) }) {
+                    Text(option)
                 }
-                Text(message.text, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Message") },
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Button(
+                onClick = {
+                    if (text.isNotBlank()) {
+                        onSend(text.trim())
+                        text = ""
+                    }
+                },
+            ) {
+                Text("Send")
             }
         }
     }
