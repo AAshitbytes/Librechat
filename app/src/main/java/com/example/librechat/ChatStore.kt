@@ -28,6 +28,10 @@ data class Peer(
     val lastSeen: Long,
 )
 
+enum class ChatRequestStatus {
+    NONE, PENDING_SENT, PENDING_RECEIVED, ACCEPTED
+}
+
 /**
  * Holds everything the screens display. Nothing is written to disk, so chats start empty every
  * time the app is opened.
@@ -42,6 +46,9 @@ class ChatStore {
 
     private val unreadIds = MutableStateFlow<Set<String>>(emptySet())
     val unreadChatIds: StateFlow<Set<String>> = unreadIds
+
+    private val statuses = MutableStateFlow<Map<String, ChatRequestStatus>>(emptyMap())
+    val chatStatuses: StateFlow<Map<String, ChatRequestStatus>> = statuses
 
     // One conversation per chat: PUBLIC for the public chat, otherwise the other phone's id.
     private val conversations = mutableMapOf<String, MutableStateFlow<List<ChatMessage>>>()
@@ -85,14 +92,35 @@ class ChatStore {
 
     fun addIncoming(packet: Packet) {
         val chatId = if (packet.to == PUBLIC) PUBLIC else packet.from
-        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = false))
+        if (packet.type == TYPE_REQUEST) {
+            updateStatus(chatId, ChatRequestStatus.PENDING_RECEIVED)
+        } else if (packet.type == TYPE_ACCEPT) {
+            updateStatus(chatId, ChatRequestStatus.ACCEPTED)
+            return // Accept packet doesn't have text to show
+        }
+
+        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = false, timestamp = packet.timestamp))
         synchronized(unreadIds) {
             unreadIds.value = unreadIds.value + chatId
         }
     }
 
     fun addOutgoing(chatId: String, packet: Packet) {
-        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = true))
+        if (packet.type == TYPE_REQUEST) {
+            updateStatus(chatId, ChatRequestStatus.PENDING_SENT)
+        }
+        add(chatId, ChatMessage(packet.from, packet.name, packet.text, mine = true, timestamp = packet.timestamp))
+    }
+
+    @Synchronized
+    fun updateStatus(chatId: String, status: ChatRequestStatus) {
+        if (chatId == PUBLIC) return
+        statuses.value = statuses.value + (chatId to status)
+    }
+
+    fun statusOf(chatId: String): ChatRequestStatus {
+        if (chatId == PUBLIC) return ChatRequestStatus.ACCEPTED
+        return statuses.value[chatId] ?: ChatRequestStatus.NONE
     }
 
     @Synchronized
