@@ -25,7 +25,7 @@ private const val GONE_AFTER_MS = 30_000L
  */
 class MeshManager(
     context: Context,
-    val myName: String,
+    var myName: String,
     /** The short id of this phone, used to address private messages. Comes from [Settings]. */
     val myId: String,
     settings: Settings,
@@ -75,6 +75,12 @@ class MeshManager(
         server.start()
         client.start()
         store.removeGone(before = System.currentTimeMillis())
+        announce()
+    }
+
+    /** Updates our name and tells the mesh straight away. */
+    fun updateName(newName: String) {
+        myName = newName
         announce()
     }
 

@@ -127,13 +127,10 @@ class MainActivity : ComponentActivity() {
                         screen = Screen.Chat(chatId, title)
                     },
                     onRefresh = { active.refresh() },
-                    onChangeName = {
-                        active.stop()
-                        settings.name = ""
-                        manager = null
-                        mesh = null
-                        name = ""
-                        screen = Screen.Name
+                    onNameChanged = { newName ->
+                        settings.name = newName
+                        active.updateName(newName)
+                        name = newName
                     }
                 )
             }

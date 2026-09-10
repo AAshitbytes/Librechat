@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -48,12 +50,24 @@ fun DeviceScreen(
     unreadChatIds: Set<String>,
     onOpenChat: (chatId: String, title: String) -> Unit,
     onRefresh: () -> Unit,
-    onChangeName: () -> Unit = {},
+    onNameChanged: (String) -> Unit,
 ) {
     var filter by remember { mutableStateOf("") }
+    var showNameDialog by remember { mutableStateOf(false) }
     
     val filteredPaired = pairedPeers.filter { it.name.contains(filter, ignoreCase = true) }
     val filteredDiscovered = discoveredPeers.filter { it.name.contains(filter, ignoreCase = true) }
+
+    if (showNameDialog) {
+        NameEditDialog(
+            currentName = myName,
+            onDismiss = { showNameDialog = false },
+            onConfirm = {
+                onNameChanged(it)
+                showNameDialog = false
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -77,7 +91,7 @@ fun DeviceScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("You are $myName (#$myId)", style = MaterialTheme.typography.bodyMedium)
-            TextButton(onClick = onChangeName) {
+            TextButton(onClick = { showNameDialog = true }) {
                 Text("Change Name")
             }
         }
@@ -200,4 +214,39 @@ private fun PeerRow(
             color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+@Composable
+fun NameEditDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Change Name") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Your name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
