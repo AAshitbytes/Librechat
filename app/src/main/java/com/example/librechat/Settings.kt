@@ -33,8 +33,27 @@ class Settings(context: Context) {
             return fresh
         }
 
+    /**
+     * A list of peers we have accepted chat requests from. They are stored as "id|name" strings
+     * so they can be shown in the device list even when offline.
+     */
+    var pairedPeers: Set<String>
+        get() = prefs.getStringSet(KEY_PAIRED, emptySet()) ?: emptySet()
+        private set(value) {
+            prefs.edit().putStringSet(KEY_PAIRED, value).apply()
+        }
+
+    fun addPairedPeer(id: String, name: String) {
+        val current = pairedPeers.toMutableSet()
+        // Remove old entry for this ID if it exists (e.g. name update)
+        current.removeAll { it.startsWith("$id|") }
+        current.add("$id|$name")
+        pairedPeers = current
+    }
+
     private companion object {
         const val KEY_NAME = "name"
         const val KEY_ID = "id"
+        const val KEY_PAIRED = "paired_peers"
     }
 }

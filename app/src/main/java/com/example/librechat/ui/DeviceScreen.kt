@@ -43,14 +43,17 @@ import com.example.librechat.Peer
 fun DeviceScreen(
     myName: String,
     myId: String,
-    peers: List<Peer>,
+    pairedPeers: List<Peer>,
+    discoveredPeers: List<Peer>,
     unreadChatIds: Set<String>,
     onOpenChat: (chatId: String, title: String) -> Unit,
     onRefresh: () -> Unit,
     onChangeName: () -> Unit = {},
 ) {
     var filter by remember { mutableStateOf("") }
-    val filtered = peers.filter { it.name.contains(filter, ignoreCase = true) }
+    
+    val filteredPaired = pairedPeers.filter { it.name.contains(filter, ignoreCase = true) }
+    val filteredDiscovered = discoveredPeers.filter { it.name.contains(filter, ignoreCase = true) }
 
     Column(
         modifier = Modifier
@@ -113,52 +116,88 @@ fun DeviceScreen(
             value = filter,
             onValueChange = { filter = it },
             modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search devices...") },
+            placeholder = { Text("Search contacts or devices...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        Text("Devices", style = MaterialTheme.typography.titleMedium)
-        Spacer(modifier = Modifier.height(8.dp))
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            if (filteredPaired.isNotEmpty()) {
+                item {
+                    Text("My Contacts", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+                items(filteredPaired) { peer ->
+                    PeerRow(peer, unreadChatIds, onOpenChat)
+                    HorizontalDivider()
+                }
+                item { Spacer(modifier = Modifier.height(16.dp)) }
+            }
 
-        if (filtered.isEmpty()) {
-            Text(
-                "Looking for other phones running LibreChat...",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        } else {
-            LazyColumn {
-                items(filtered) { peer ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onOpenChat(peer.id, peer.name) }
-                            .padding(vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(peer.name, style = MaterialTheme.typography.bodyLarge)
-                            if (peer.id in unreadChatIds) {
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary),
-                                )
-                            }
-                        }
-                        Text(
-                            if (peer.nearby) "Direct" else "Relay",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
+            item {
+                Text("Nearby Devices", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            if (filteredDiscovered.isEmpty()) {
+                item {
+                    Text(
+                        if (filter.isEmpty()) "Looking for other phones..." else "No other devices found",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                items(filteredDiscovered) { peer ->
+                    PeerRow(peer, unreadChatIds, onOpenChat)
                     HorizontalDivider()
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun PeerRow(
+    peer: Peer,
+    unreadChatIds: Set<String>,
+    onOpenChat: (chatId: String, title: String) -> Unit
+) {
+    val isOnline = peer.lastSeen > 0
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenChat(peer.id, peer.name) }
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                peer.name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (isOnline) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (peer.id in unreadChatIds) {
+                Spacer(modifier = Modifier.width(8.dp))
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+        }
+        Text(
+            when {
+                peer.nearby -> "Direct"
+                isOnline -> "Relay"
+                else -> "Offline"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }

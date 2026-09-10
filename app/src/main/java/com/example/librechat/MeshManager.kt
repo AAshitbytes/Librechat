@@ -28,9 +28,10 @@ class MeshManager(
     val myName: String,
     /** The short id of this phone, used to address private messages. Comes from [Settings]. */
     val myId: String,
+    settings: Settings,
 ) {
 
-    val store = ChatStore()
+    val store = ChatStore(settings)
 
     private val router = MeshRouter(myId)
     private val server = BleServer(context, ::onLine, ::onLinkUp, ::onLinkDown)

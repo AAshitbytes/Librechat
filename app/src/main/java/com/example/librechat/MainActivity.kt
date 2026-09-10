@@ -87,7 +87,7 @@ class MainActivity : ComponentActivity() {
 
                 else -> {
                     settings.name = name
-                    val started = MeshManager(context, name, settings.id)
+                    val started = MeshManager(context, name, settings.id, settings)
                     started.start()
                     manager = started
                     mesh = started
@@ -113,12 +113,14 @@ class MainActivity : ComponentActivity() {
             }
 
             Screen.Devices -> manager?.let { active ->
-                val peers by active.store.peers.collectAsState()
+                val pairedPeers by active.store.pairedPeers.collectAsState()
+                val discoveredPeers by active.store.discoveredPeers.collectAsState()
                 val unreadChatIds by active.store.unreadChatIds.collectAsState()
                 DeviceScreen(
                     myName = active.myName,
                     myId = active.myId,
-                    peers = peers,
+                    pairedPeers = pairedPeers,
+                    discoveredPeers = discoveredPeers,
                     unreadChatIds = unreadChatIds,
                     onOpenChat = { chatId, title ->
                         active.store.markRead(chatId)
