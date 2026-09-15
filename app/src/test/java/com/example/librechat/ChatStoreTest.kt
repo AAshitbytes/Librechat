@@ -73,4 +73,44 @@ class ChatStoreTest {
 
         assertEquals(1, store.messages(PUBLIC).value.size)
     }
+
+    @Test
+    fun `peers are split into paired and discovered`() {
+        val store = ChatStore()
+        
+        // Add two peers
+        store.addPeer("id1", "Alice", nearby = true)
+        store.addPeer("id2", "Bob", nearby = true)
+        
+        // Initially both are discovered
+        assertEquals(2, store.discoveredPeers.value.size)
+        assertEquals(0, store.pairedPeers.value.size)
+        
+        // Accept Alice
+        store.updateStatus("id1", ChatRequestStatus.ACCEPTED)
+        
+        // Now Alice is paired, Bob is discovered
+        assertEquals(1, store.pairedPeers.value.size)
+        assertEquals("Alice", store.pairedPeers.value[0].name)
+        assertEquals(1, store.discoveredPeers.value.size)
+        assertEquals("Bob", store.discoveredPeers.value[0].name)
+    }
+
+    @Test
+    fun `paired peers stay in list when offline`() {
+        val store = ChatStore()
+        store.addPeer("id1", "Alice", nearby = true, at = 1000)
+        store.updateStatus("id1", ChatRequestStatus.ACCEPTED)
+        
+        // Alice goes offline
+        store.removeGone(before = 5000)
+        
+        // Alice should still be in paired list but marked offline (lastSeen = 0)
+        assertEquals(1, store.pairedPeers.value.size)
+        assertEquals("Alice", store.pairedPeers.value[0].name)
+        assertEquals(0L, store.pairedPeers.value[0].lastSeen)
+        
+        // Discovered list should be empty
+        assertEquals(0, store.discoveredPeers.value.size)
+    }
 }

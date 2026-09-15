@@ -39,9 +39,19 @@ enum class ChatRequestStatus {
  * The values are StateFlows because Compose can watch them and redraw a screen by itself whenever
  * a message or a device arrives.
  */
-class ChatStore {
+class ChatStore(private val settings: Settings? = null) {
 
     private val peerList = MutableStateFlow<List<Peer>>(emptyList())
+    
+    // The full list of peers we have accepted, even if they are currently offline.
+    private val persistentPeers = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    private val _pairedPeers = MutableStateFlow<List<Peer>>(emptyList())
+    val pairedPeers: StateFlow<List<Peer>> = _pairedPeers
+
+    private val _discoveredPeers = MutableStateFlow<List<Peer>>(emptyList())
+    val discoveredPeers: StateFlow<List<Peer>> = _discoveredPeers
+
     val peers: StateFlow<List<Peer>> = peerList
 
     private val unreadIds = MutableStateFlow<Set<String>>(emptySet())
@@ -49,6 +59,20 @@ class ChatStore {
 
     private val statuses = MutableStateFlow<Map<String, ChatRequestStatus>>(emptyMap())
     val chatStatuses: StateFlow<Map<String, ChatRequestStatus>> = statuses
+
+    init {
+        // Load paired peers from settings
+        settings?.let { s ->
+            val saved = s.pairedPeers.mapNotNull { 
+                val parts = it.split("|", limit = 2)
+                if (parts.size == 2) parts[0] to parts[1] else null
+            }.toMap()
+            persistentPeers.value = saved
+            
+            // Pre-fill statuses with ACCEPTED for all persistent peers
+            statuses.value = saved.mapValues { ChatRequestStatus.ACCEPTED }
+        }
+    }
 
     // One conversation per chat: PUBLIC for the public chat, otherwise the other phone's id.
     private val conversations = mutableMapOf<String, MutableStateFlow<List<ChatMessage>>>()
@@ -70,12 +94,21 @@ class ChatStore {
     ) {
         val updated = peerList.value.filter { it.id != id } + Peer(id, name, nearby, at)
         peerList.value = updated.sortedWith(compareByDescending<Peer> { it.nearby }.thenBy { it.name })
+        
+        // If this is a paired peer, update their name in persistence if it changed
+        if (persistentPeers.value.containsKey(id) && persistentPeers.value[id] != name) {
+            persistentPeers.value = persistentPeers.value + (id to name)
+            settings?.addPairedPeer(id, name)
+        }
+        
+        updateSplitFlows()
     }
 
     /** The direct link to this phone is gone, but we may still reach it through the mesh. */
     @Synchronized
     fun clearNearby(id: String) {
         peerList.value = peerList.value.map { if (it.id == id) it.copy(nearby = false) else it }
+        updateSplitFlows()
     }
 
     /**
@@ -88,6 +121,23 @@ class ChatStore {
     @Synchronized
     fun removeGone(before: Long) {
         peerList.value = peerList.value.filter { it.lastSeen >= before }
+        updateSplitFlows()
+    }
+
+    private fun updateSplitFlows() {
+        val online = peerList.value
+        val paired = persistentPeers.value
+
+        // Paired list: Everyone in 'paired', with online status if available
+        val pairedList = paired.map { (id, name) ->
+            online.find { it.id == id } ?: Peer(id, name, nearby = false, lastSeen = 0)
+        }.sortedWith(compareByDescending<Peer> { it.lastSeen > 0 }.thenBy { it.name })
+
+        // Discovered list: Everyone 'online' who is NOT in 'paired'
+        val discoveredList = online.filter { !paired.containsKey(it.id) }
+
+        _pairedPeers.value = pairedList
+        _discoveredPeers.value = discoveredList
     }
 
     fun addIncoming(packet: Packet) {
@@ -116,6 +166,15 @@ class ChatStore {
     fun updateStatus(chatId: String, status: ChatRequestStatus) {
         if (chatId == PUBLIC) return
         statuses.value = statuses.value + (chatId to status)
+        
+        if (status == ChatRequestStatus.ACCEPTED) {
+            val name = nameOf(chatId)
+            if (!persistentPeers.value.containsKey(chatId)) {
+                persistentPeers.value = persistentPeers.value + (chatId to name)
+                settings?.addPairedPeer(chatId, name)
+                updateSplitFlows()
+            }
+        }
     }
 
     fun statusOf(chatId: String): ChatRequestStatus {
