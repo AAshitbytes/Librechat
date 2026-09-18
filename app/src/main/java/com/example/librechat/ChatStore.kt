@@ -186,7 +186,11 @@ class ChatStore(private val settings: Settings? = null) {
     fun markRead(chatId: String) {
         unreadIds.value = unreadIds.value - chatId
     }
-
+    @Synchronized
+    fun clearChat(chatId: String) {
+        conversation(chatId).value = emptyList()
+        unreadIds.value = unreadIds.value - chatId
+    }
     @Synchronized
     private fun add(chatId: String, message: ChatMessage) {
         val flow = conversation(chatId)

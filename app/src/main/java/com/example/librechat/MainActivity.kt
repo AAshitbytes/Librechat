@@ -153,6 +153,10 @@ class MainActivity : ComponentActivity() {
                     status = status,
                     onSend = { text -> active.send(current.chatId, text) },
                     onAccept = { active.accept(current.chatId) },
+                    // Added feature: clear only this conversation.
+                    onClearChat = { active.store.clearChat(current.chatId) },
+                    // Added feature: manually retry store-and-forward packets.
+                    onRetryPending = { active.retryPendingMessages() },
                     onBack = { screen = Screen.Devices },
                 )
             }

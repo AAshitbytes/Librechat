@@ -44,9 +44,12 @@ fun ChatScreen(
     status: ChatRequestStatus,
     onSend: (String) -> Unit,
     onAccept: () -> Unit,
+    onClearChat: () -> Unit,
+    onRetryPending: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
+    var showClearDialog by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     // Keep the newest message in view.
@@ -61,8 +64,16 @@ fun ChatScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onBack) { Text("Back") }
-            Text(title, style = MaterialTheme.typography.titleLarge)
+            Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+            TextButton(onClick = { showClearDialog = true }) { Text("Clear") }
         }
+
+        Text(
+            "${messages.size} message${if (messages.size == 1) "" else "s"}",
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
 
         LazyColumn(
             state = listState,
@@ -75,6 +86,11 @@ fun ChatScreen(
         }
 
         Spacer(Modifier.padding(4.dp))
+
+        // Added feature: one-tap manual retry for packets waiting for a relay.
+        TextButton(onClick = onRetryPending, modifier = Modifier.fillMaxWidth()) {
+            Text("Retry pending messages")
+        }
 
         when (status) {
             ChatRequestStatus.PENDING_SENT -> {
@@ -124,6 +140,23 @@ fun ChatScreen(
                 }
             }
         }
+    }
+
+    if (showClearDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearDialog = false },
+            title = { Text("Clear chat?") },
+            text = { Text("This removes the messages from this screen only.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClearChat()
+                    showClearDialog = false
+                }) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 }
 

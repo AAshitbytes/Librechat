@@ -43,6 +43,12 @@ class MeshManager(
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    // Added feature: keep chat packets locally and retry them when a relay/link becomes available.
+    private val storeAndForward = StoreAndForward(
+        scope = scope,
+        sendPacket = { packet -> sendToEveryone(packet, except = null) }
+    )
+
     fun start() {
         server.start()
         client.start()
@@ -84,6 +90,11 @@ class MeshManager(
         announce()
     }
 
+    // Added feature: manually retry packets waiting in the store-and-forward buffer.
+    fun retryPendingMessages() {
+        storeAndForward.retry()
+    }
+
     /** Sends a message the user typed. Pass PUBLIC as [to] for the public chat. */
     fun send(to: String, text: String) {
         val status = store.statusOf(to)
@@ -92,10 +103,13 @@ class MeshManager(
         } else {
             Packet.message(from = myId, name = myName, to = to, text = text)
         }
-        
+
         // Remember our own message so the copy that comes back through the mesh is ignored.
         router.remember(packet.id)
         store.addOutgoing(to, packet)
+
+        // Added feature: do not lose the message if the next relay is temporarily unavailable.
+        storeAndForward.add(packet)
         sendToEveryone(packet, except = null)
     }
 
@@ -104,6 +118,9 @@ class MeshManager(
         store.updateStatus(chatId, ChatRequestStatus.ACCEPTED)
         val packet = Packet.accept(from = myId, name = myName, to = chatId)
         router.remember(packet.id)
+
+        // Added feature: also buffer chat-request acceptance packets.
+        storeAndForward.add(packet)
         sendToEveryone(packet, except = null)
     }
 
@@ -122,9 +139,16 @@ class MeshManager(
         when (val action = router.handle(packet)) {
             is Action.Drop -> Unit
             is Action.Deliver -> deliver(packet, address)
-            is Action.Relay -> sendToEveryone(action.packet, except = address)
+            is Action.Relay -> {
+                // Added feature: remember the packet so this phone can forward it later
+                // if the next person is temporarily unavailable.
+                storeAndForward.add(action.packet)
+                sendToEveryone(action.packet, except = address)
+            }
             is Action.DeliverAndRelay -> {
                 deliver(packet, address)
+                // Added feature: store before forwarding so a temporary link loss is recoverable.
+                storeAndForward.add(action.packet)
                 sendToEveryone(action.packet, except = address)
             }
         }
@@ -158,6 +182,10 @@ class MeshManager(
     /** A new link is ready, so introduce ourselves straight away instead of waiting for the timer. */
     private fun onLinkUp(address: String) {
         announce()
+
+        // Added feature: immediately retry buffered packets when a relay becomes available.
+        storeAndForward.onLinkAvailable()
+
         Log.d(TAG, "link up with $address")
     }
 
